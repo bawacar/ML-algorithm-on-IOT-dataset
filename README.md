@@ -158,4 +158,4 @@ predictions = mlp.predict(scaler.transform(X_new)).argmax(axis=1)
 
 ## Author
 
-Barakah Bolaji Obileye — CMP7239 coursework.
+Barakah Bolaji Obileye.
