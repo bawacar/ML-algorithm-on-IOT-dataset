@@ -1,5 +1,3 @@
-# ML-algorithm-on-IOT-dataset
-
 # IoT Botnet Detection on the N-BaIoT Dataset
 
 Machine learning detection of Mirai and Gafgyt UDP-flood botnet traffic using the
