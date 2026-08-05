@@ -3,37 +3,59 @@
 Machine learning detection of Mirai and Gafgyt UDP-flood botnet traffic using the
 N-BaIoT behavioural feature set. Supporting code for CMP7239 coursework.
 
-Eleven algorithms are implemented across three families and compared under one
-consistent methodology, with robustness checks for overfitting, split-dependence
-and dimensionality reduction.
+Eleven algorithms across three families, tuned under one methodology, then
+evaluated on a balanced split **and** on the 304,413 rows no stage of modelling
+ever touched.
 
 ---
 
-## Summary of results
+## Headline results
 
-| Family | Model | Key metric |
-|---|---|---|
-| Supervised | Logistic Regression | 0.9987 macro-F1 |
-| Supervised | Decision Tree | 0.9998 macro-F1 |
-| Supervised | **Random Forest** | **1.0000 macro-F1** |
-| Supervised | Support Vector Machine | 0.9987 macro-F1 |
-| Unsupervised | K-Means | ARI 0.429 |
-| Unsupervised | Agglomerative Clustering | ARI 0.477 |
-| Unsupervised | **DBSCAN** | **ARI 0.986** |
-| Deep learning | MLP | 0.9987 macro-F1 |
-| Deep learning | Deep DNN | 0.9982 macro-F1 |
-| Deep learning | 1D-CNN | 0.5021 macro-F1 (failed on Gafgyt) |
-| Deep learning | Autoencoder | 0.2426 macro-F1 (failed to flag attacks) |
+| Family | Model | Balanced test | Novel holdout |
+|---|---|---|---|
+| Supervised | Logistic Regression | 0.9987 | 0.7711 |
+| Supervised | Decision Tree | 0.9998 | 0.8078 |
+| Supervised | Random Forest | 1.0000 | **0.8377** |
+| Supervised | Support Vector Machine | 0.9987 | 0.7847 |
+| Unsupervised | K-Means | ARI 0.429 | — |
+| Unsupervised | Agglomerative Clustering | ARI 0.477 | — |
+| Unsupervised | **DBSCAN** | **ARI 0.986** | — |
+| Deep learning | MLP | 0.9987 | — |
+| Deep learning | Deep DNN | 0.9982 | — |
+| Deep learning | 1D-CNN | 0.5021 | — |
+| Deep learning | Autoencoder (benign-scaled) | — | **0.9832** |
 
-Three findings are worth highlighting:
+**Recommended for deployment: Decision Tree.** 96.8 microseconds per packet at
+the median, 237 at p99, 2.1 KB on disk, and benign/Mirai recall indistinguishable
+from Random Forest.
 
-1. A depth-4 Decision Tree reaches 0.9998 macro-F1 using only **two** of the 115
-   features, so the engineered statistics carry nearly all of the signal.
-2. Selecting K-Means settings by silhouette score gives ARI 0.429, while a
-   configuration the same score ranked lower gives ARI 0.798. Internal validation
-   is necessary but not sufficient.
-3. The two most capable deep learning architectures performed the worst, each
-   defeated by a property of the data rather than by any lack of capacity.
+---
+
+## Five findings worth reading the code for
+
+1. **Two features do the work.** A depth-4 Decision Tree reaches 0.9998 macro-F1
+   using only `MI_dir_L0.01_weight` and `H_L0.1_variance`. The other 113 features
+   have exactly zero importance.
+
+2. **Gafgyt is a converged class.** At float64, 94.6% of Gafgyt rows are distinct.
+   After the float32 downcast, only **110** distinct rows remain in the entire
+   dataset. This single fact explains the DBSCAN result, the 1D-CNN failure, and
+   the duplicate-leakage problem below.
+
+3. **32.8% of the holdout is not really unseen.** Because duplicates were retained,
+   99.9% of Gafgyt holdout rows are exact copies of training rows. Only 102 Gafgyt
+   rows are genuinely novel. Any holdout score reported without this check is
+   inflated.
+
+4. **The Autoencoder failure was a preprocessing bug, not a model limitation.**
+   Scaled on all three classes it scores 0.1989 macro-F1 with 0.0066 attack recall.
+   Scaled on benign traffic alone, holding everything else fixed, it scores
+   **0.9832** with **0.9999** attack recall. A scaler fitted on attack data
+   normalises attacks into the benign range before the model sees them.
+
+5. **Throughput and latency give opposite answers.** Random Forest costs 1.43 µs
+   per sample in batches of 10,000, but **3,656 µs** per packet at batch=1. Only
+   the batch=1 figure describes inline detection.
 
 ---
 
@@ -42,14 +64,14 @@ Three findings are worth highlighting:
 ```
 .
 ├── IoT_Botnet_Detection_Analysis.ipynb   # full analysis notebook
-├── iot_botnet_detection_analysis.py      # script export of the notebook
+├── iot_botnet_detection_analysis.py      # script export
 ├── save_models.py                        # saves every trained model + scaler
 ├── requirements.txt
 ├── .gitignore
-└── saved_models/                         # trained models (see below)
-    ├── scaler.joblib                     # REQUIRED to use any sklearn model
+└── saved_models/
+    ├── scaler.joblib                     # REQUIRED with any sklearn model
     ├── logistic_regression.joblib
-    ├── decision_tree.joblib
+    ├── decision_tree.joblib              # the recommended production model
     ├── random_forest.joblib
     ├── svm.joblib
     ├── kmeans.joblib
@@ -65,34 +87,31 @@ Three findings are worth highlighting:
 
 ## Where to find things
 
-The report refers to the notebook for detail that was moved out of the write-up.
-This table maps report sections to notebook sections.
+The report points here for detail kept out of the write-up.
 
-| Report section | Notebook section | What is there |
+| Report section | Notebook section | Detail held here |
 |---|---|---|
-| 3.2 Data integrity and redundancy | 3.x EDA | Correlation heatmap, PCA scree plot |
-| 3.5 Gafgyt in projection | 3.x Gafgyt diagnostic | float32 vs float64 uniqueness test, PC5 analysis |
-| 5.2 Hyperparameter tuning | 5.x Tuning | **Full grids and the winning value at every stage** |
-| 5.3 Results | 5.x Final models | Per-class classification reports for all models |
-| 5.5 Overfitting and CV | 5.x Robustness | Per-fold cross-validation scores |
-| 5.6 Dimensionality reduction | 5.x PCA test | Full 115 vs 11-component comparison |
-| 7.1 Timing | 7.x Timing | Train and predict timing measurements |
+| 3.2 Redundancy | EDA | Correlation heatmap, PCA scree plot, full variance table |
+| 3.5 Gafgyt convergence | Gafgyt diagnostic | float32 vs float64 uniqueness test, per-component spread |
+| 5.1 Tuning | Tuning | **Full hyperparameter grids and every stage winner** |
+| 5.2 Results | Final models | Per-class classification reports for all eleven models |
+| 5.4 Robustness | Robustness | Per-fold cross-validation scores, clustering stability runs |
+| 7.2 Generalisation | §9 Production eval | Duplicate-leakage check, full holdout scoring |
+| 7.4 Autoencoder | §9 Production eval | Scaler A/B experiment, reconstruction error distributions |
+| 7.5 Deployment | §9 Production eval | Latency percentiles, batch sweep, model footprints |
 
 ---
 
 ## Dataset
 
-The three N-BaIoT CSV files are **not included** in this repository, because they
-exceed GitHub's file size limits.
+The three CSV files are **not included**, as they exceed GitHub's size limits.
 
-Required files:
+- `benign_traffic.csv` (62,154 rows)
+- `gafgyt_attacks_udp.csv` (104,011 rows)
+- `mirai_attacks_udp.csv` (156,248 rows)
 
-- `benign_traffic.csv` (approx. 62,000 rows)
-- `gafgyt_attacks_udp.csv` (approx. 104,000 rows)
-- `mirai_attacks_udp.csv` (approx. 156,000 rows)
-
-Download them from the UCI Machine Learning Repository (N-BaIoT dataset) and place
-them in the project root before running the notebook.
+Download from the UCI Machine Learning Repository (N-BaIoT) and place in the
+project root.
 
 ---
 
@@ -103,59 +122,59 @@ pip install -r requirements.txt
 jupyter notebook IoT_Botnet_Detection_Analysis.ipynb
 ```
 
-Run the cells top to bottom. `RANDOM_STATE = 42` is fixed throughout, so results
-are reproducible. The deep learning sections require TensorFlow and are much
-faster on a GPU runtime such as Google Colab.
+Run top to bottom. `RANDOM_STATE = 42` throughout, so results reproduce exactly.
+The deep learning sections need TensorFlow and are far faster on a GPU runtime.
 
 ---
 
-## Using a saved model
+## Using the production model
 
-Every sklearn model was trained on scaled features, so the **scaler must be loaded
-with it**. Predictions made without the scaler will be wrong.
+The scaler must be loaded with the model. Predictions made on unscaled features
+are meaningless.
 
 ```python
 import joblib
 
-model  = joblib.load("saved_models/random_forest.joblib")
+model  = joblib.load("saved_models/decision_tree.joblib")
 scaler = joblib.load("saved_models/scaler.joblib")
 
-X_scaled = scaler.transform(X_new)      # X_new: raw 115-feature rows
-predictions = model.predict(X_scaled)   # 0 = benign, 1 = gafgyt_udp, 2 = mirai_udp
+preds = model.predict(scaler.transform(X_new))
+# 0 = benign, 1 = gafgyt_udp, 2 = mirai_udp
 ```
 
-For the Keras models:
+For the Autoencoder, note finding 4 above: fit the scaler on **benign traffic
+only**, never on mixed classes.
 
 ```python
 from tensorflow import keras
-import joblib
+from sklearn.preprocessing import StandardScaler
+import numpy as np
 
-mlp    = keras.models.load_model("saved_models/mlp.keras")
-scaler = joblib.load("saved_models/scaler.joblib")
+ae = keras.models.load_model("saved_models/autoencoder.keras")
+benign_scaler = StandardScaler().fit(X_benign_reference)   # benign rows ONLY
 
-predictions = mlp.predict(scaler.transform(X_new)).argmax(axis=1)
+Xs  = benign_scaler.transform(X_new)
+err = np.mean((Xs - ae.predict(Xs))**2, axis=1)
+is_attack = err > threshold          # threshold = 95th pct of benign training error
 ```
 
 ---
 
 ## Methodology notes
 
-- **Sampling.** Modelling uses a stratified sample of 6,000 rows per class
-  (18,000 total), the largest that keeps Agglomerative Clustering and SVM
-  workable on a single CPU. The held-out test set is 4,500 rows.
-- **Scaling.** `StandardScaler` is fitted on the training split only. In
-  cross-validation it is refitted inside each fold via a `Pipeline`, so no
-  test-fold information leaks into training.
-- **Tuning.** A staged search is used: the most influential hyperparameter is
-  swept first, then further hyperparameters with earlier winners held fixed.
-  This assumes weak interaction between hyperparameters, which is stated as a
-  limitation in the report.
-- **Duplicates.** 34.4 percent of rows are exact duplicates. These were retained
-  deliberately, since removing them would alter the class-conditional density
-  the models are meant to learn.
+- **Sampling.** 6,000 rows per class (18,000 total), the largest that keeps
+  Agglomerative Clustering and SVM workable on one CPU. Held-out test set 4,500
+  rows. The remaining 304,413 rows are used for the production evaluation.
+- **Scaling.** `StandardScaler` fitted on the training split only, refitted inside
+  each fold during cross-validation via a `Pipeline`.
+- **Tuning.** Staged search: most influential hyperparameter first, then others
+  with earlier winners fixed. Assumes weak interaction, stated as a limitation.
+- **Duplicates.** 34.4% of rows are exact duplicates, retained deliberately since
+  removing them would alter the class-conditional density. The consequence for
+  holdout evaluation is measured explicitly rather than ignored.
 
 ---
 
 ## Author
 
-Barakah Bolaji Obileye.
+Barakah Bolaji Obileye 
